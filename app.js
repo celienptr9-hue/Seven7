@@ -23,9 +23,9 @@
   let currentAccountName = "";
   let firebaseServices = null;
   let firebaseServicesPromise = null;
-  let accountMode = "login";
   let accountBusy = false;
   let cloudSyncPromise = Promise.resolve();
+  let sharedPlayersUnsubscribe = null;
   let setupNames = ["Joueur 1", "Joueur 2"];
   let setupMystery = false;
   let setupMysteryClue = "club";
@@ -53,15 +53,52 @@
   }
 
   function activeStorageKey() {
-    return currentAccount ? `${STORAGE_KEY}:${currentAccount.uid}` : STORAGE_KEY;
-  }
-
-  function accountStorageKey(uid) {
-    return `${STORAGE_KEY}:${uid}`;
+    return STORAGE_KEY;
   }
 
   function isFirebaseConfigured() {
     return Boolean(FIREBASE_CONFIG.apiKey && FIREBASE_CONFIG.authDomain && FIREBASE_CONFIG.projectId && FIREBASE_CONFIG.storageBucket && FIREBASE_CONFIG.appId);
+  }
+
+  function accountEmail() {
+    return String(FIREBASE_CONFIG.adminEmail || `seven-admin@${FIREBASE_CONFIG.projectId}.firebaseapp.com`).toLowerCase();
+  }
+
+  function accountPassword(pin) {
+    return `Seven-${pin}!`;
+  }
+
+  function compressPhotoForFirestore(dataUrl) {
+    if (!dataUrl?.startsWith("data:image/")) return Promise.resolve("");
+    const base64 = dataUrl.split(",", 2)[1] || "";
+    if (base64.length * .75 < 350 * 1024) return Promise.resolve(dataUrl);
+    return new Promise((resolve, reject) => {
+      const image = new Image();
+      image.onerror = () => reject(new Error("Impossible de lire une photo."));
+      image.onload = async () => {
+        let scale = Math.min(1, 720 / Math.max(image.naturalWidth, image.naturalHeight));
+        try {
+          for (let attempt = 0; attempt < 5; attempt++, scale *= .75) {
+            const canvas = document.createElement("canvas");
+            canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
+            canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
+            const context = canvas.getContext("2d");
+            context.fillStyle = "#fff";
+            context.fillRect(0, 0, canvas.width, canvas.height);
+            context.drawImage(image, 0, 0, canvas.width, canvas.height);
+            const compressed = canvas.toDataURL("image/jpeg", .72);
+            if (compressed.length < 650 * 1024) {
+              resolve(compressed);
+              return;
+            }
+          }
+          reject(new Error("Cette photo ne peut pas être assez compressée pour Firestore."));
+        } catch (error) {
+          reject(error);
+        }
+      };
+      image.src = dataUrl;
+    });
   }
 
   async function loadFirebaseServices() {
@@ -69,75 +106,49 @@
     if (firebaseServicesPromise) return firebaseServicesPromise;
     firebaseServicesPromise = (async () => {
       const base = `https://www.gstatic.com/firebasejs/${FIREBASE_SDK_VERSION}`;
-      const [appSdk, authSdk, firestoreSdk, storageSdk, functionsSdk] = await Promise.all([
+      const [appSdk, authSdk, firestoreSdk] = await Promise.all([
         import(`${base}/firebase-app.js`),
         import(`${base}/firebase-auth.js`),
-        import(`${base}/firebase-firestore.js`),
-        import(`${base}/firebase-storage.js`),
-        import(`${base}/firebase-functions.js`)
+        import(`${base}/firebase-firestore.js`)
       ]);
-      const { functionsRegion, ...webConfig } = FIREBASE_CONFIG;
+      const { functionsRegion: _unusedRegion, ...webConfig } = FIREBASE_CONFIG;
       const app = appSdk.initializeApp(webConfig, "seven-game");
       const auth = authSdk.getAuth(app);
       const db = firestoreSdk.getFirestore(app);
-      const storage = storageSdk.getStorage(app);
-      const functions = functionsSdk.getFunctions(app, functionsRegion || "europe-west1");
-      firebaseServices = { appSdk, authSdk, firestoreSdk, storageSdk, functionsSdk, auth, db, storage, functions };
+      firebaseServices = { appSdk, authSdk, firestoreSdk, auth, db };
       return firebaseServices;
     })();
     return firebaseServicesPromise;
   }
 
-  async function readAccountPlayers(uid) {
-    const { db, firestoreSdk, storage, storageSdk } = firebaseServices;
-    const collectionRef = firestoreSdk.collection(db, "users", uid, "footballers");
+  async function readSharedPlayers() {
+    const { db, firestoreSdk } = firebaseServices;
+    const collectionRef = firestoreSdk.collection(db, "footballers");
     const snapshot = await firestoreSdk.getDocs(collectionRef);
-    return Promise.all(snapshot.docs.map(async playerDoc => {
-      const player = playerDoc.data();
-      let photo = "";
-      if (player.photoPath) {
-        try {
-          photo = await storageSdk.getDownloadURL(storageSdk.ref(storage, player.photoPath));
-        } catch {
-          photo = "";
-        }
-      }
-      return { ...player, id: player.id || playerDoc.id, photo };
-    }));
+    return snapshot.docs.map(playerDoc => ({ ...playerDoc.data(), id: playerDoc.data().id || playerDoc.id }));
   }
 
   async function syncPlayersToCloud() {
     if (!currentAccount || !firebaseServices) return;
-    const { db, firestoreSdk, storage, storageSdk } = firebaseServices;
-    const collectionRef = firestoreSdk.collection(db, "users", currentAccount.uid, "footballers");
+    const { db, firestoreSdk } = firebaseServices;
+    const collectionRef = firestoreSdk.collection(db, "footballers");
     const existing = await firestoreSdk.getDocs(collectionRef);
     const ids = new Set(players.map(player => player.id));
 
     for (const player of players) {
-      let photoPath = player.photoPath || "";
-      if (player.photo?.startsWith("data:")) {
-        photoPath = `users/${currentAccount.uid}/playerPhotos/${encodeURIComponent(player.id)}`;
-        const photoBlob = await fetch(player.photo).then(response => response.blob());
-        await storageSdk.uploadBytes(storageSdk.ref(storage, photoPath), photoBlob, { contentType: photoBlob.type || "image/jpeg" });
-        player.photoPath = photoPath;
-        player.photo = await storageSdk.getDownloadURL(storageSdk.ref(storage, photoPath));
-      }
+      if (player.photo?.startsWith("data:image/") && player.photo.length > 450 * 1024) player.photo = await compressPhotoForFirestore(player.photo);
       await firestoreSdk.setDoc(firestoreSdk.doc(collectionRef, player.id), {
         id: player.id,
         name: player.name,
         position: player.position,
         nationality: player.nationality || "",
         club: player.club || "",
-        photoPath
+        photo: player.photo || ""
       });
     }
 
     for (const playerDoc of existing.docs) {
       if (ids.has(playerDoc.id)) continue;
-      const oldPlayer = playerDoc.data();
-      if (oldPlayer.photoPath) {
-        await storageSdk.deleteObject(storageSdk.ref(storage, oldPlayer.photoPath)).catch(() => {});
-      }
       await firestoreSdk.deleteDoc(playerDoc.ref);
     }
     localStorage.setItem(activeStorageKey(), JSON.stringify(players));
@@ -153,29 +164,22 @@
     });
   }
 
-  async function loadAccountPlayers(user, firstName = "") {
-    const cacheKey = accountStorageKey(user.uid);
-    const hasAccountCache = localStorage.getItem(cacheKey) !== null;
-    const cachedPlayers = readPlayers(cacheKey);
+  async function loadSharedPlayers(isAdmin = false) {
     const legacyPlayers = readPlayers(STORAGE_KEY);
-    const importedKey = `${STORAGE_KEY}:legacy-imported:${user.uid}`;
-    const cloudPlayers = await readAccountPlayers(user.uid);
+    const backupKey = `${STORAGE_KEY}:legacy-backup`;
+    const importedKey = `${STORAGE_KEY}:shared-imported`;
+    if (legacyPlayers.length && !localStorage.getItem(backupKey)) {
+      localStorage.setItem(backupKey, JSON.stringify(legacyPlayers));
+    }
+    const cloudPlayers = await readSharedPlayers();
     let nextPlayers = cloudPlayers;
     let shouldUpload = false;
 
-    if (cloudPlayers.length === 0 && cachedPlayers.length > 0) {
-      nextPlayers = cachedPlayers;
-      shouldUpload = true;
-    } else if (cloudPlayers.length === 0 && legacyPlayers.length > 0 && localStorage.getItem(importedKey) !== "true") {
-      if (window.confirm(`Importer les ${legacyPlayers.length} joueurs enregistrés sur cet appareil dans le compte ${firstName || "Seven"} ?`)) {
-        nextPlayers = legacyPlayers;
-        shouldUpload = true;
-      } else {
-        nextPlayers = [];
-      }
-      localStorage.setItem(importedKey, "true");
-    } else if (cloudPlayers.length > 0 && legacyPlayers.length > 0 && !hasAccountCache && localStorage.getItem(importedKey) !== "true") {
-      if (window.confirm(`Fusionner les ${legacyPlayers.length} joueurs locaux avec la base de ce compte ?`)) {
+    if (isAdmin && legacyPlayers.length > 0 && localStorage.getItem(importedKey) !== "true") {
+      const importMessage = cloudPlayers.length === 0
+        ? `Importer les ${legacyPlayers.length} joueurs de cet appareil dans la base partagée ? La copie locale restera conservée.`
+        : `Fusionner les ${legacyPlayers.length} joueurs de cet appareil avec la base partagée ?`;
+      if (window.confirm(importMessage)) {
         const merged = new Map(cloudPlayers.map(player => [player.id, player]));
         for (const player of legacyPlayers) if (!merged.has(player.id)) merged.set(player.id, player);
         nextPlayers = [...merged.values()];
@@ -184,11 +188,25 @@
       localStorage.setItem(importedKey, "true");
     }
 
-    currentAccount = user;
-    currentAccountName = firstName || user.displayName || "";
-    players = nextPlayers;
-    localStorage.setItem(cacheKey, JSON.stringify(players));
-    if (shouldUpload) await syncPlayersToCloud();
+    players = cloudPlayers.length || isAdmin ? nextPlayers : legacyPlayers;
+    if (cloudPlayers.length || isAdmin) localStorage.setItem(STORAGE_KEY, JSON.stringify(players));
+    if (shouldUpload) {
+      players = nextPlayers;
+      await syncPlayersToCloud();
+    }
+  }
+
+  function listenToSharedPlayers() {
+    if (!firebaseServices) return;
+    sharedPlayersUnsubscribe?.();
+    const collectionRef = firebaseServices.firestoreSdk.collection(firebaseServices.db, "footballers");
+    sharedPlayersUnsubscribe = firebaseServices.firestoreSdk.onSnapshot(collectionRef, snapshot => {
+      players = snapshot.docs.map(playerDoc => ({ ...playerDoc.data(), id: playerDoc.data().id || playerDoc.id }));
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(players));
+      if (screen === "menu" || screen === "settings") render();
+    }, error => {
+      console.error("Seven shared player listener failed", error);
+    });
   }
 
   function escapeHtml(value = "") {
@@ -240,7 +258,7 @@
   }
 
   function accountButtonHtml() {
-    const label = currentAccount ? `Compte · ${escapeHtml(currentAccountName || "Connecté")}` : "Compte";
+    const label = currentAccount ? `Admin · ${escapeHtml(currentAccountName || "Célien")}` : "Accès admin";
     return `<button class="button secondary account-header-button" data-action="account">${label}</button>`;
   }
 
@@ -294,19 +312,19 @@
     screen = "account";
     let content;
     if (currentAccount) {
-      content = `<section class="setup-panel account-panel"><h2>Compte connecté</h2><p class="account-name">${escapeHtml(currentAccountName || "Seven")}</p><p class="subtle">Ta base de joueurs est associée à ce compte.</p><div class="form-actions"><button class="button secondary" data-action="home">Retour au jeu</button><button class="button danger" data-action="account-signout">Déconnexion</button></div></section>`;
-    } else if (!isFirebaseConfigured()) {
-      content = `<section class="setup-panel account-panel"><h2>Compte cloud</h2><div class="notice">Firebase n’est pas encore configuré. Renseigne les paramètres de ton projet dans <strong>firebase-config.js</strong>, puis déploie les fonctions et les règles.</div><p class="subtle">Les fiches actuelles restent enregistrées localement et ne sont pas supprimées.</p><button class="button secondary" data-action="home">Retour au jeu</button></section>`;
+      content = `<section class="setup-panel account-panel"><h2>Administration</h2><p class="account-name">${escapeHtml(currentAccountName || "Célien")}</p><p class="subtle">Tu peux modifier la base partagée visible par tous.</p><div class="form-actions"><button class="button secondary" data-action="home">Retour au jeu</button><button class="button danger" data-action="account-signout">Verrouiller</button></div></section>`;
+    } else if (!isFirebaseConfigured() || location.protocol === "file:") {
+      const unavailableMessage = location.protocol === "file:"
+        ? "La connexion cloud est disponible depuis le site publié en HTTPS, pas depuis un fichier local."
+        : "Renseigne les paramètres publics de ton projet dans firebase-config.js.";
+      content = `<section class="setup-panel account-panel"><h2>Compte cloud</h2><div class="notice">${escapeHtml(unavailableMessage)}</div><p class="subtle">Les fiches locales restent enregistrées sur cet appareil.</p><button class="button secondary" data-action="home">Retour au jeu</button></section>`;
     } else {
-      const isRegister = accountMode === "register";
-      content = `<section class="setup-panel account-panel"><h2>${isRegister ? "Créer mon compte" : "Me connecter"}</h2>
+      content = `<section class="setup-panel account-panel"><h2>Accès administrateur</h2>
         ${noticeHtml()}
-        <div class="account-tabs"><button type="button" class="button ${isRegister ? "secondary" : ""}" data-action="account-mode-login">Connexion</button><button type="button" class="button ${isRegister ? "" : "secondary"}" data-action="account-mode-register">Créer un compte</button></div>
-        <form id="account-form"><div class="field"><label for="account-first-name">Prénom · identifiant</label><input id="account-first-name" name="firstName" maxlength="32" autocomplete="username" required></div>
-          <div class="field"><label for="account-pin">Code personnel à 4 chiffres</label><input id="account-pin" name="pin" type="password" inputmode="numeric" pattern="[0-9]{4}" minlength="4" maxlength="4" autocomplete="${isRegister ? "new-password" : "current-password"}" required></div>
-          <button class="button" type="submit" ${accountBusy ? "disabled" : ""}>${accountBusy ? "Connexion…" : isRegister ? "Créer le compte" : "Connexion"}</button>
+        <form id="account-form"><div class="account-identifier"><span>Identifiant</span><strong>${escapeHtml(FIREBASE_CONFIG.adminDisplayName || "Célien")}</strong></div><div class="field"><label for="account-pin">Mot de passe · 4 chiffres</label><input id="account-pin" name="pin" type="password" inputmode="numeric" pattern="[0-9]{4}" minlength="4" maxlength="4" autocomplete="current-password" required></div>
+          <button class="button" type="submit" ${accountBusy ? "disabled" : ""}>${accountBusy ? "Vérification…" : "Déverrouiller"}</button>
         </form>
-        <p class="account-footnote">Chaque prénom ne peut identifier qu’un seul compte. Le code est personnel; les tentatives sont limitées.</p>
+        <p class="account-footnote">La base est partagée. Seul l’administrateur peut ajouter, modifier ou supprimer des joueurs.</p>
         <button class="button quiet" data-action="home">Retour au jeu local</button>
       </section>`;
     }
@@ -317,29 +335,30 @@
     return photo ? `<img src="${escapeHtml(photo)}" alt="Photo de ${escapeHtml(name)}">` : escapeHtml(initials(name));
   }
 
-  function playerRow(player) {
+  function playerRow(player, canManage) {
     const details = [player.nationality, player.club].filter(Boolean).join(" · ");
-    return `<article class="player-row"><div class="avatar">${photoMarkup(player.photo, player.name)}</div><div class="player-main"><div class="player-name">${escapeHtml(player.name)}</div><div class="player-meta">${positionIcon(player.position)} ${escapeHtml(details)}</div></div><div class="row-actions"><button class="button secondary" data-action="edit-player" data-id="${escapeHtml(player.id)}" aria-label="Modifier ${escapeHtml(player.name)}">✎</button><button class="button danger" data-action="delete-player" data-id="${escapeHtml(player.id)}" aria-label="Supprimer ${escapeHtml(player.name)}">×</button></div></article>`;
+    return `<article class="player-row"><div class="avatar">${photoMarkup(player.photo, player.name)}</div><div class="player-main"><div class="player-name">${escapeHtml(player.name)}</div><div class="player-meta">${positionIcon(player.position)} ${escapeHtml(details)}</div></div>${canManage ? `<div class="row-actions"><button class="button secondary" data-action="edit-player" data-id="${escapeHtml(player.id)}" aria-label="Modifier ${escapeHtml(player.name)}">✎</button><button class="button danger" data-action="delete-player" data-id="${escapeHtml(player.id)}" aria-label="Supprimer ${escapeHtml(player.name)}">×</button></div>` : ""}</article>`;
   }
 
   function renderSettings() {
     screen = "settings";
     const current = players.find(player => player.id === editingId);
+    const canManage = Boolean(currentAccount);
     const formTitle = current ? "Modifier une fiche" : "Ajouter un footballeur";
     const sorted = [...players].sort((a, b) => a.name.localeCompare(b.name, "fr"));
     shell(`<section class="section-head"><div><div class="eyebrow">Paramètres</div><h1 class="page-title">Joueurs</h1></div><button class="button secondary" data-action="home">← Menu</button></section>
       ${noticeHtml()}${inventoryNotice()}${requirementsHtml()}
       <div class="settings-layout">
-        <form class="form-panel" id="player-form"><h2>${formTitle}</h2>
+        ${canManage ? `<form class="form-panel" id="player-form"><h2>${formTitle}</h2>
           <div class="field"><label for="player-name">Nom *</label><input id="player-name" name="name" maxlength="80" required value="${escapeHtml(current?.name || "")}" placeholder="Nom du footballeur"></div>
           <div class="field"><label for="player-position">Poste *</label><select id="player-position" name="position" required>${POSITIONS.map(position => `<option value="${position}" ${current?.position === position ? "selected" : ""}>${position}</option>`).join("")}</select></div>
           <div class="field"><label for="player-nationality">Nationalité</label><input id="player-nationality" name="nationality" maxlength="60" value="${escapeHtml(current?.nationality || "")}" placeholder="Facultatif"></div>
           <div class="field"><label for="player-club">Club</label><input id="player-club" name="club" maxlength="60" value="${escapeHtml(current?.club || "")}" placeholder="Facultatif"></div>
           <div class="field"><label for="player-photo">Photo</label><input id="player-photo" name="photo" type="file" accept="image/*"><small>Facultative · conservée uniquement sur cet appareil. Image conseillée : moins de 1 Mo.</small>${current?.photo ? `<small>Une photo est déjà enregistrée. Choisir un autre fichier la remplacera.</small>` : ""}</div>
           <div class="form-actions"><button class="button" type="submit">${current ? "Enregistrer" : "Ajouter le joueur"}</button>${current ? `<button class="button secondary" type="button" data-action="cancel-edit">Annuler</button>` : ""}</div>
-        </form>
+        </form>` : `<section class="form-panel"><h2>Base partagée</h2><p class="subtle">Consultation publique. L’accès administrateur est nécessaire pour gérer les fiches.</p><button class="button" data-action="account">Accès admin</button></section>`}
         <section class="list-panel"><h2>Base des joueurs <span class="countline">${players.length}</span></h2>
-          <div class="player-list">${sorted.length ? sorted.map(playerRow).join("") : `<div class="empty-state">Aucun joueur pour le moment.<br>Ajoute la première fiche pour constituer la base.</div>`}</div>
+          <div class="player-list">${sorted.length ? sorted.map(player => playerRow(player, canManage)).join("") : `<div class="empty-state">Aucun joueur dans la base partagée.</div>`}</div>
         </section>
       </div>`);
   }
@@ -646,6 +665,12 @@
   }
 
   function savePlayer(form) {
+    if (!currentAccount || currentAccount.email?.toLowerCase() !== accountEmail()) {
+      notice = "Seul l’administrateur peut modifier la base partagée.";
+      noticeType = "error";
+      renderSettings();
+      return;
+    }
     const data = new FormData(form);
     const name = String(data.get("name") || "").trim();
     const position = String(data.get("position") || "");
@@ -675,6 +700,7 @@
   }
 
   function deletePlayer(id) {
+    if (!currentAccount || currentAccount.email?.toLowerCase() !== accountEmail()) return;
     const player = players.find(item => item.id === id);
     if (!player || !window.confirm(`Supprimer la fiche de ${player.name} ? Cette action est définitive.`)) return;
     const previous = players;
@@ -689,10 +715,9 @@
 
   async function submitAccount(form) {
     const data = new FormData(form);
-    const firstName = String(data.get("firstName") || "").trim();
     const pin = String(data.get("pin") || "");
-    if (!firstName || !/^\d{4}$/.test(pin)) {
-      notice = "Saisis ton prénom et un code composé de 4 chiffres.";
+    if (!/^\d{4}$/.test(pin)) {
+      notice = "Saisis le code administrateur à 4 chiffres.";
       noticeType = "error";
       renderAccount();
       return;
@@ -704,13 +729,15 @@
     renderAccount();
     try {
       const services = await loadFirebaseServices();
-      const functionName = accountMode === "register" ? "registerAccount" : "loginAccount";
-      const callable = services.functionsSdk.httpsCallable(services.functions, functionName);
-      const result = await callable({ firstName, pin });
-      const credential = await services.authSdk.signInWithCustomToken(services.auth, result.data.customToken);
+      const credential = await services.authSdk.signInWithEmailAndPassword(services.auth, accountEmail(), accountPassword(pin));
+      if (credential.user.email?.toLowerCase() !== accountEmail()) {
+        await services.authSdk.signOut(services.auth);
+        throw new Error("Ce compte n’est pas administrateur.");
+      }
       currentAccount = credential.user;
-      currentAccountName = result.data.firstName;
-      await loadAccountPlayers(credential.user, result.data.firstName);
+      currentAccountName = FIREBASE_CONFIG.adminDisplayName || "Célien";
+      await loadSharedPlayers(true);
+      listenToSharedPlayers();
       screen = "menu";
       notice = `Base synchronisée · ${players.length} joueurs.`;
       noticeType = "success";
@@ -721,13 +748,15 @@
       currentAccount = null;
       currentAccountName = "";
       players = readPlayers(STORAGE_KEY);
-      notice = errorCode.includes("already-exists")
-        ? "Ce prénom est déjà utilisé. Connecte-toi avec son code personnel."
-        : errorCode.includes("resource-exhausted")
-          ? "Trop d’essais; réessaie dans 15 minutes."
-          : errorCode.includes("unauthenticated")
-            ? "Prénom ou code incorrect."
-            : "Connexion impossible. Vérifie la configuration Firebase et ta connexion.";
+      notice = errorCode.includes("user-not-found")
+        ? "Le compte admin doit d’abord être créé dans Firebase Authentication."
+        : errorCode.includes("too-many-requests")
+          ? "Trop d’essais; réessaie plus tard."
+          : errorCode.includes("invalid-credential") || errorCode.includes("wrong-password") || errorCode.includes("invalid-login-credentials")
+            ? "Code administrateur incorrect."
+            : errorCode.includes("operation-not-allowed")
+              ? "Active E-mail/Mot de passe dans Firebase Authentication."
+              : "Connexion impossible. Vérifie la configuration Firebase et ta connexion.";
       noticeType = "error";
       screen = "account";
       renderAccount();
@@ -739,23 +768,31 @@
 
   async function signOutAccount() {
     if (firebaseServices && currentAccount) await firebaseServices.authSdk.signOut(firebaseServices.auth);
+    sharedPlayersUnsubscribe?.();
+    sharedPlayersUnsubscribe = null;
     currentAccount = null;
     currentAccountName = "";
-    players = readPlayers(STORAGE_KEY);
-    notice = "Tu es déconnecté. La copie locale de cet appareil est conservée.";
-    noticeType = "success";
-    screen = "account";
-    renderAccount();
+    try {
+      await loadSharedPlayers(false);
+      listenToSharedPlayers();
+      notice = "Administration verrouillée. Le catalogue partagé reste consultable.";
+      noticeType = "success";
+    } catch {
+      players = readPlayers(STORAGE_KEY);
+      notice = "Administration verrouillée. Affichage de la dernière copie locale.";
+      noticeType = "success";
+    }
+    screen = "menu";
+    renderMenu();
   }
 
   async function startApplication() {
-    if (!isFirebaseConfigured()) {
+    if (!isFirebaseConfigured() || location.protocol === "file:") {
       renderMenu();
       return;
     }
-    screen = "account";
-    notice = "Vérification du compte…";
-    renderAccount();
+    screen = "menu";
+    renderMenu();
     try {
       const services = await loadFirebaseServices();
       const user = await new Promise(resolve => {
@@ -765,15 +802,17 @@
           resolve(account);
         });
       });
-      if (!user) {
-        notice = "";
-        renderAccount();
-        return;
+      if (user?.email?.toLowerCase() === accountEmail()) {
+        currentAccount = user;
+        currentAccountName = FIREBASE_CONFIG.adminDisplayName || "Célien";
+        await loadSharedPlayers(true);
+      } else {
+        if (user) await services.authSdk.signOut(services.auth);
+        currentAccount = null;
+        currentAccountName = "";
+        await loadSharedPlayers(false);
       }
-      currentAccount = user;
-      const token = await user.getIdTokenResult();
-      currentAccountName = token.claims.firstName || user.displayName || "";
-      await loadAccountPlayers(user, currentAccountName);
+      listenToSharedPlayers();
       screen = "menu";
       notice = "";
       renderMenu();
@@ -782,10 +821,10 @@
       currentAccount = null;
       currentAccountName = "";
       players = readPlayers(STORAGE_KEY);
-      notice = "Connexion Firebase indisponible. Vérifie ta connexion et la configuration du projet.";
+      notice = "La base partagée est indisponible; affichage de la copie locale.";
       noticeType = "error";
-      screen = "account";
-      renderAccount();
+      screen = "menu";
+      renderMenu();
     }
   }
 
@@ -857,10 +896,6 @@
     const action = button.dataset.action;
     if (action === "account") {
       notice = ""; screen = "account"; renderAccount();
-    } else if (action === "account-mode-login") {
-      accountMode = "login"; notice = ""; renderAccount();
-    } else if (action === "account-mode-register") {
-      accountMode = "register"; notice = ""; renderAccount();
     } else if (action === "account-signout") {
       void signOutAccount();
     } else if (action === "home") {

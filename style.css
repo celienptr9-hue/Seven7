@@ -123,6 +123,8 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
 .account-layout { max-width: 620px; }
 .account-panel { max-width: 560px; margin: 0 auto; }
 .account-panel .account-name { margin: -6px 0 4px; color: var(--green); font-family: Georgia, serif; font-size: 25px; }
+.account-identifier { display: flex; align-items: center; justify-content: space-between; margin: 0 0 15px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 4px; color: var(--muted); background: var(--surface-raised); }
+.account-identifier strong { color: var(--ink); font-family: Georgia, serif; font-size: 18px; }
 .account-tabs { display: flex; gap: 8px; margin: 0 0 18px; }
 .account-tabs .button { flex: 1; }
 .account-footnote { margin: 16px 0 10px; color: var(--muted); font-size: 12px; line-height: 1.5; }
