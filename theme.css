@@ -1,0 +1,145 @@
+/* ==========================================================
+   Seven · sélecteur de thème + thème clair
+   Thème clair : blanc dominant, vert pelouse (#0f7a55) en couleur
+   principale, orange brûlé (#d9622b) pour l'équipe de droite.
+   ========================================================== */
+
+/* ---------- Panneau de choix (commun aux deux thèmes) ---------- */
+.theme-panel { margin: 18px 0 0; padding: 18px 20px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); }
+.theme-panel-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
+.theme-panel h2 { margin: 0; font-family: Georgia, "Times New Roman", serif; font-size: 20px; }
+.theme-panel-head p { margin: 0; color: var(--muted); font-size: 12px; }
+.theme-options { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.theme-option { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 6px; color: var(--ink); background: var(--surface-raised); text-align: left; transition: border-color .15s ease, box-shadow .15s ease; }
+.theme-option:hover { border-color: var(--green); }
+.theme-option[aria-pressed="true"] { border-color: var(--green); box-shadow: 0 0 0 2px var(--green); }
+.theme-option strong { display: block; font-size: 14px; }
+.theme-option small { display: block; margin-top: 2px; color: var(--muted); font-size: 11px; }
+.theme-swatch { position: relative; flex: 0 0 auto; width: 46px; height: 34px; overflow: hidden; border: 1px solid rgba(128, 128, 128, .4); border-radius: 5px; }
+.theme-swatch::after { content: ""; position: absolute; bottom: 6px; left: 6px; width: 18px; height: 6px; border-radius: 3px; }
+.swatch-dark { background: #100e17; }
+.swatch-dark::after { background: #bb98ff; }
+.swatch-light { background: #ffffff; }
+.swatch-light::after { background: #0f7a55; }
+.swatch-auto { background: linear-gradient(135deg, #100e17 50%, #ffffff 50%); }
+.swatch-auto::after { background: #0f7a55; }
+
+@media (max-width: 700px) {
+  .theme-panel { padding: 15px; }
+  .theme-panel-head { flex-direction: column; gap: 4px; }
+  .theme-options { grid-template-columns: 1fr; }
+}
+
+/* ---------- Thème clair ---------- */
+:root[data-theme="light"] {
+  color-scheme: light;
+  --ink: #14231c;
+  --muted: #5b6d64;
+  --paper: #ffffff;
+  --surface: #ffffff;
+  --surface-raised: #f1f7f3;
+  --line: #d8e5dd;
+  --green: #0f7a55;
+  --green-dark: #eaf5ee;
+  --green-light: #d9efe3;
+  --orange: #d9622b;
+  --yellow: #f4c542;
+  --red: #c62f45;
+  --accent-gradient: linear-gradient(120deg, #0b6b4a 0%, #12895f 100%);
+  --shadow: 0 14px 38px rgba(20, 60, 42, .12);
+}
+
+:root[data-theme="light"] body {
+  background-color: #ffffff;
+  background-image: radial-gradient(circle at 100% 0, rgba(15, 122, 85, .08), transparent 40%), linear-gradient(180deg, #ffffff, #f6faf7);
+  background-size: 100% 100%, 100% 100%;
+}
+
+:root[data-theme="light"] button:focus-visible,
+:root[data-theme="light"] input:focus-visible,
+:root[data-theme="light"] select:focus-visible { outline-color: #0f7a55; }
+
+/* En-tête */
+:root[data-theme="light"] .topbar { border-bottom-color: var(--line); }
+:root[data-theme="light"] .brand-mark { box-shadow: inset 0 0 0 4px rgba(255, 255, 255, .22), 0 5px 16px rgba(15, 122, 85, .28); }
+
+/* Boutons */
+:root[data-theme="light"] .button { border-radius: 8px; box-shadow: 0 4px 14px rgba(15, 122, 85, .22); }
+:root[data-theme="light"] .button.secondary { color: var(--ink); border-color: var(--line); background: #ffffff; box-shadow: none; }
+:root[data-theme="light"] .button.secondary:hover { border-color: #9fc7b3; background: #f1f7f3; }
+:root[data-theme="light"] .button.quiet:hover { background: rgba(15, 122, 85, .08); }
+:root[data-theme="light"] .button.danger { color: #b3263b; border-color: #f0c3cb; background: #fff3f5; }
+:root[data-theme="light"] .button.warning { color: #ffffff; background: linear-gradient(120deg, #d9622b, #e9803f); box-shadow: 0 4px 14px rgba(217, 98, 43, .25); }
+
+/* Menu principal */
+:root[data-theme="light"] .menu-panel { border-color: rgba(15, 122, 85, .22); border-radius: 12px; color: var(--ink); background: linear-gradient(145deg, #f3faf6, #e0f0e7); }
+:root[data-theme="light"] .menu-panel::before { opacity: .55; background: repeating-linear-gradient(90deg, transparent 0 76px, rgba(15, 122, 85, .22) 77px 78px), repeating-linear-gradient(0deg, transparent 0 76px, rgba(15, 122, 85, .22) 77px 78px); }
+:root[data-theme="light"] .menu-panel::after { border-color: rgba(15, 122, 85, .4); }
+:root[data-theme="light"] .menu-panel .pitch-box { border-color: rgba(15, 122, 85, .4); }
+:root[data-theme="light"] .panel-label { color: #4a3600; }
+:root[data-theme="light"] .panel-number { color: #0f7a55; }
+:root[data-theme="light"] .panel-caption { color: var(--muted); }
+:root[data-theme="light"] .mode-card { border-radius: 10px; background: #ffffff; box-shadow: 0 6px 20px rgba(20, 60, 42, .07); }
+:root[data-theme="light"] .mode-card.primary-mode { border-color: #8fc4ab; background: linear-gradient(145deg, #e6f4ec, #ffffff 75%); }
+:root[data-theme="light"] .mode-card.settings-mode { background: #f6faf8; }
+:root[data-theme="light"] .warning-text { color: #b4501f; }
+
+/* Pastilles, exigences, positions */
+:root[data-theme="light"] .requirement { border-radius: 8px; background: #ffffff; }
+:root[data-theme="light"] .requirement-icon,
+:root[data-theme="light"] .position-icon { background: #e3f1e9; }
+
+/* Messages */
+:root[data-theme="light"] .notice { color: #5a2a12; background: #fff1ea; }
+:root[data-theme="light"] .notice.success { border-color: var(--green); color: #0b4f38; background: #e6f5ed; }
+:root[data-theme="light"] .notice.error { border-color: var(--red); color: #7d1627; background: #fdeaed; }
+
+/* Panneaux et formulaires */
+:root[data-theme="light"] .form-panel,
+:root[data-theme="light"] .list-panel,
+:root[data-theme="light"] .setup-panel { border-radius: 12px; background: #ffffff; box-shadow: 0 10px 30px rgba(20, 60, 42, .08); }
+:root[data-theme="light"] .theme-panel { border-radius: 12px; }
+:root[data-theme="light"] .field input,
+:root[data-theme="light"] .field select { border-color: #c5d6cc; border-radius: 6px; background: #fbfdfc; }
+:root[data-theme="light"] .player-row { border-color: var(--line); background: #f8fbf9; }
+:root[data-theme="light"] .empty-state { border-color: #c5d6cc; }
+:root[data-theme="light"] .mystery-settings { background: #f1f7f3; }
+:root[data-theme="light"] .setup-rules { border-color: var(--line); background: #f1f7f3; }
+
+/* Partie en cours */
+:root[data-theme="light"] .team-panel { border-radius: 12px; box-shadow: 0 8px 24px rgba(20, 60, 42, .08); }
+:root[data-theme="light"] .team-panel.active { box-shadow: 0 0 22px rgba(15, 122, 85, .18); }
+:root[data-theme="light"] .team-panel.right-team.active { box-shadow: 0 0 22px rgba(217, 98, 43, .18); }
+:root[data-theme="light"] .turn-badge { color: #ffffff; }
+:root[data-theme="light"] .position-group { border-bottom-color: #e3ece6; }
+:root[data-theme="light"] .roster-empty { color: #93a39a; }
+:root[data-theme="light"] .progress-track { background: #e1ece5; }
+
+:root[data-theme="light"] .center-stage {
+  border-color: rgba(15, 122, 85, .22);
+  border-radius: 12px;
+  color: var(--ink);
+  background-color: #eef7f1;
+  background-image: repeating-linear-gradient(0deg, transparent 0 67px, rgba(15, 122, 85, .09) 68px 69px), repeating-linear-gradient(90deg, transparent 0 67px, rgba(15, 122, 85, .09) 68px 69px), linear-gradient(145deg, #f6fbf8, #e4f2ea 72%);
+}
+:root[data-theme="light"] .center-label { color: #0f7a55; }
+:root[data-theme="light"] .candidate-photo { border-color: #ffffff; color: #0b4f38; background: linear-gradient(135deg, #e6f5ed, #b9dfc9); box-shadow: 0 8px 22px rgba(20, 60, 42, .18); }
+:root[data-theme="light"] .mystery-mark { border-color: #ffffff; box-shadow: 0 8px 22px rgba(20, 60, 42, .2); }
+:root[data-theme="light"] .candidate-detail { color: var(--muted); }
+:root[data-theme="light"] .bid-box { border-color: rgba(15, 122, 85, .25); background: rgba(255, 255, 255, .85); }
+:root[data-theme="light"] .bid-line { color: var(--muted); }
+:root[data-theme="light"] .bid-value { color: #0f7a55; }
+:root[data-theme="light"] .turn-note { color: #34473d; }
+:root[data-theme="light"] .bid-controls input { border-color: #b7cfc2; color: var(--ink); background: #ffffff; }
+:root[data-theme="light"] .bid-explainer { color: var(--muted); }
+:root[data-theme="light"] .right-choice { color: #ffffff; background: linear-gradient(120deg, #d9622b, #e9803f); box-shadow: 0 4px 14px rgba(217, 98, 43, .25); }
+
+/* Résultats */
+:root[data-theme="light"] .result-panel { border-radius: 12px; }
+:root[data-theme="light"] .tactical-pitch { box-shadow: 0 14px 34px rgba(20, 60, 42, .2); }
+
+/* Tri, filtres, raretés et notes */
+:root[data-theme="light"] .list-tools { border-radius: 8px; }
+:root[data-theme="light"] .card-type-field { border-color: #c5d6cc; border-radius: 6px; }
+:root[data-theme="light"] .card-type-option input { accent-color: #0f7a55; }
+:root[data-theme="light"] .rating-chip { background: #ffffff; }
