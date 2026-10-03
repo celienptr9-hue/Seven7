@@ -1,0 +1,14 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /footballers/{playerId} {
+      allow read: if true;
+      allow create, update, delete: if request.auth != null
+        && request.auth.token.email == 'seven-admin@compteseven7-b1ca5.firebaseapp.com';
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
