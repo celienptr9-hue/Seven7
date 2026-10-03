@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#173d30">
+  <title>Seven | Jeu d'enchères football</title>
+  <link rel="stylesheet" href="./style.css">
+  <link rel="stylesheet" href="./theme.css">
+  <script>
+    /* Applique le thème enregistré avant le premier affichage (évite un flash sombre). La gestion complète est dans app.js. */
+    try {
+      var t = localStorage.getItem("seven-theme");
+      if (t === "auto") t = matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+      document.documentElement.setAttribute("data-theme", t === "light" ? "light" : "dark");
+    } catch (e) {}
+  </script>
+  <script src="./firebase-config.js"></script>
+  <script src="./app.js" defer></script>
+</head>
+<body>
+  <div id="app"></div>
+</body>
+</html>
