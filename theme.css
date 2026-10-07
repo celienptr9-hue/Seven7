@@ -1,0 +1,50 @@
+/* ==========================================================================
+   Seven — thème clair « programme du jour »
+   Papier craie, encre verte, mêmes maillots (bleu et corail).
+   Ce fichier ne redéfinit que les variables : la mise en page est dans style.css.
+   ========================================================================== */
+
+:root[data-theme="light"] {
+  color-scheme: light;
+
+  --night: #eef0e6;
+  --turf: #ffffff;
+  --turf-2: #f6f7f0;
+  --board: #ffffff;
+  --chalk: #0e1f17;
+  --mist: #52675b;
+  --dim: #8a9c91;
+  --line: rgba(14, 31, 23, .13);
+  --line-strong: rgba(14, 31, 23, .36);
+  --field: #ffffff;
+
+  --left: #2458dc;
+  --left-ink: #ffffff;
+  --right: #e04a22;
+  --right-ink: #ffffff;
+
+  --btn-bg: #0e1f17;
+  --btn-ink: #f3f4ec;
+  --danger: #c4302b;
+  --ok: #17794a;
+
+  --stripe: rgba(34, 110, 72, .045);
+  --stripe-strong: rgba(34, 110, 72, .06);
+  --flood: rgba(255, 255, 255, .85);
+  --flood-2: rgba(255, 244, 214, .6);
+  --pitch-a: #2c7d57;
+  --pitch-b: #267150;
+  --pitch-line: rgba(255, 255, 255, .78);
+  --shadow: 0 20px 44px rgba(20, 60, 42, .22);
+}
+
+/* Les cartes sur fond blanc gardent une ombre légère pour se détacher du papier */
+:root[data-theme="light"] .team-panel,
+:root[data-theme="light"] .result-panel,
+:root[data-theme="light"] .form-panel,
+:root[data-theme="light"] .setup-panel,
+:root[data-theme="light"] .player-row { box-shadow: 0 1px 0 rgba(14, 31, 23, .04), 0 8px 24px rgba(20, 60, 42, .05); }
+:root[data-theme="light"] .team-panel.active { box-shadow: 0 0 0 1px var(--team), 0 14px 40px -10px color-mix(in srgb, var(--team) 50%, transparent); }
+:root[data-theme="light"] .candidate-photo { border-color: #ffffff; box-shadow: 0 0 0 9px rgba(14, 31, 23, .06), 0 20px 40px rgba(20, 60, 42, .22); }
+:root[data-theme="light"] .formation-name { color: #f3f4ec; }
+:root[data-theme="light"] .segment input[value="legend"]:checked + span { color: #3a2a00; }
