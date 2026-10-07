@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0b1712">
+  <title>Seven | Jeu d'enchères football</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@700;800;900&family=Schibsted+Grotesk:wght@400;500;600;700;800&display=swap">
+  <script>
+    /* Applique le design (Prototype ou Fini) et le thème (Sombre ou Clair) enregistrés avant le premier affichage,
+       pour éviter tout « flash ». La gestion complète est dans app.js. */
+    (function () {
+      var design = "final", theme = "dark";
+      try {
+        if (localStorage.getItem("seven-design") === "proto") design = "proto";
+        if (localStorage.getItem("seven-theme") === "light") theme = "light";
+      } catch (e) {}
+      document.documentElement.setAttribute("data-design", design);
+      document.documentElement.setAttribute("data-theme", theme);
+      var suffix = design === "proto" ? "-proto" : "";
+      document.write('<link id="design-css" rel="stylesheet" href="./style' + suffix + '.css">');
+      document.write('<link id="theme-css" rel="stylesheet" href="./theme' + suffix + '.css">');
+    })();
+  </script>
+  <script src="./firebase-config.js"></script>
+  <script src="./app.js" defer></script>
+</head>
+<body>
+  <div id="app"></div>
+</body>
+</html>
