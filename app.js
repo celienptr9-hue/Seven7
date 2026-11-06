@@ -1113,6 +1113,35 @@
     return `<div class="section-head"><div>${eyebrowHtml(eyebrow)}<h1 class="page-title">${title}</h1>${isProto() ? "" : `<p class="subtle m-kicker">${eyebrow}</p>`}</div><button class="button secondary" type="button" data-action="${action}">${label}</button></div>`;
   }
 
+  /* En-tête commun des trois modes : un seul titre, une seule ligne de contexte, les actions à droite. */
+  function modeBar(eyebrow, title, actions) {
+    return `<div class="section-head m-bar"><div>${eyebrowHtml(eyebrow)}<h1 class="page-title">${title}</h1>${isProto() ? "" : `<p class="subtle m-kicker">${eyebrow}</p>`}</div><div class="m-bar-actions">${actions}</div></div>`;
+  }
+
+  /* Règles repliables : ouvertes tant que le mode n'a jamais été lancé sur cet appareil. */
+  function rulesFold(key, items, extraClass = "") {
+    const seen = loadLocal(key).rules === true;
+    return `<details class="m-rules m-fold${extraClass ? ` ${extraClass}` : ""}"${seen ? "" : " open"}><summary>Règles du jeu</summary>${items}</details>`;
+  }
+
+  function markRulesSeen(key) {
+    if (loadLocal(key).rules !== true) saveLocal(key, { rules: true });
+  }
+
+  function copyText(text) {
+    const done = () => setNotice("Résultat copié : tu peux le coller où tu veux.");
+    const fallback = () => {
+      const area = document.createElement("textarea");
+      area.value = text; area.setAttribute("readonly", ""); area.style.position = "fixed"; area.style.opacity = "0";
+      document.body.appendChild(area); area.select();
+      let ok = false;
+      try { ok = document.execCommand("copy"); } catch { ok = false; }
+      area.remove();
+      if (ok) done(); else setNotice("Copie impossible sur ce navigateur.", "error");
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(done, fallback); else fallback();
+  }
+
   function nameFieldsHtml(prefix, names, count) {
     return `<div class="m-names">${Array.from({ length: count }, (_, i) => `<div class="field"><label for="${prefix}-${i}">Pseudo ${count > 1 ? i + 1 : ""}</label><input id="${prefix}-${i}" name="name${i}" maxlength="24" autocomplete="off" value="${escapeHtml(names[i] || "")}" required></div>`).join("")}</div>`;
   }
@@ -1189,14 +1218,19 @@
         </div>
         ${nameFieldsHtml("wh-name", d.names, d.count)}
         <h2>Manches</h2>
-        <div class="field m-narrow"><label for="wh-rounds">Nombre de manches</label><input id="wh-rounds" name="rounds" type="number" min="1" max="30" step="1" value="${d.rounds}">${d.count === 2 ? `<small>En duel, le nombre de manches est arrondi au pair pour que chacun joue autant.</small>` : ""}</div>
-        <div class="m-rules"><strong>Règles</strong><ul>
+        <div class="field m-narrow"><label for="wh-rounds">Nombre de manches</label><input id="wh-rounds" name="rounds" type="number" min="1" max="30" step="1" value="${d.rounds}">${d.count === 2 ? `<small>En duel, le nombre de manches est arrondi au pair pour que chacun joue autant.</small>` : whBestText(d.rounds)}</div>
+        ${rulesFold(WHOAMI_KEY, `<ul>
           <li>Une carte de la base reste cachée (jamais une carte Mythique). Trois indices apparaissent dans l’ordre : club, pays, poste.</li>
-          <li>Tu proposes un nom. Trouvé du premier coup : 5 points. Sinon l’indice suivant est dévoilé : 3 points au deuxième essai, 2 points au troisième. Raté après le dernier indice : 0 point.</li>
+          <li>Tu proposes un nom. Trouvé avec le premier indice : 5 points. Sinon l’indice suivant est dévoilé : 3 points, puis 2 points. Raté après le dernier indice : 0 point.</li>
           <li>${d.count === 2 ? "En duel, les manches alternent entre les deux joueurs ; celui qui a le plus de points gagne." : "À la fin, tu obtiens ton total sur le maximum possible (5 points par manche)."}</li>
-        </ul></div>
+        </ul>`)}
         <button class="button" type="submit" ${eligible ? "" : "disabled"}>Lancer la partie</button>
       </form></section>`);
+  }
+
+  function whBestText(rounds) {
+    const best = loadLocal(WHOAMI_KEY).best || {};
+    return best[rounds] !== undefined ? `<small>Record local sur ${pluralFr(rounds, "manche", "manches")} : ${best[rounds]} / ${rounds * WH_POINTS[0]} points.</small>` : "";
   }
 
   function whDeck(rounds, eligible) {
@@ -1251,24 +1285,29 @@
     return rounds * WH_POINTS[0];
   }
 
+  function whStreak() {
+    const h = whoami.history;
+    let n = 0;
+    for (let i = h.length - 1; i >= 0 && h[i] > 0; i--) n++;
+    return n;
+  }
+
   function whScoreboardHtml() {
     const w = whoami;
     const current = w.round && w.round.phase === "guess" ? w.round.player : -1;
-    return `<div class="wh-scores${w.cfg.names.length === 1 ? " solo" : ""}" aria-label="Scores">${w.cfg.names.map((name, i) => `<div class="wh-score${current === i ? " active" : ""}${i === 1 ? " right" : ""}"><span class="wh-score-name">${escapeHtml(name)}</span><strong>${w.scores[i]}<small> / ${whMaxPoints(i)}</small></strong>${current === i ? `<em>À toi</em>` : ""}</div>`).join("")}</div>`;
+    const solo = w.cfg.names.length === 1;
+    const streak = solo ? whStreak() : 0;
+    return `<div class="wh-scores${solo ? " solo" : ""}" aria-label="Scores">${w.cfg.names.map((name, i) => `<div class="wh-score${current === i ? " active" : ""}${i === 1 ? " right" : ""}"><span class="wh-score-name">${escapeHtml(name)}</span><strong>${w.scores[i]}<small> / ${whMaxPoints(i)}</small></strong></div>`).join("")}${streak >= 2 ? `<div class="wh-streak" title="Manches de suite trouvées">Série de ${streak}</div>` : ""}</div>`;
   }
 
-  function whLadderHtml(round) {
-    return `<ol class="wh-ladder" aria-label="Points selon l’essai">${WH_POINTS.map((points, i) => {
-      const unavailable = i >= round.clues.length;
-      const state = unavailable ? "off" : i < round.attempts.length ? "missed" : i === round.attempts.length && round.phase === "guess" ? "current" : "pending";
-      return `<li class="${state}"><span>Essai ${i + 1}</span><strong>${points} pts</strong></li>`;
-    }).join("")}</ol>`;
-  }
-
+  /* Un seul bloc : chaque indice porte les points gagnés si tu trouves avec lui. */
   function whCluesHtml(round) {
-    return `<ul class="wh-clues">${round.clues.map((clue, i) => i < round.shown
-      ? `<li class="wh-clue shown"><span>${escapeHtml(clue.label)}</span><strong>${escapeHtml(clue.value)}</strong></li>`
-      : `<li class="wh-clue locked"><span>Indice ${i + 1}</span><strong>?</strong></li>`).join("")}</ul>`;
+    const current = round.phase === "guess" ? round.attempts.length : -1;
+    return `<ol class="wh-clues" aria-label="Indices et points">${round.clues.map((clue, i) => {
+      const pts = `<b>${WH_POINTS[i]} pts</b>`;
+      if (i < round.shown) return `<li class="wh-clue shown${i === current ? " current" : i < current ? " past" : ""}"><span class="wh-clue-top"><em>${escapeHtml(clue.label)}</em>${pts}</span><strong>${escapeHtml(clue.value)}</strong></li>`;
+      return `<li class="wh-clue locked"><span class="wh-clue-top"><em>Indice ${i + 1}</em>${pts}</span><strong>?</strong></li>`;
+    }).join("")}</ol>`;
   }
 
   function renderWhoamiPlay() {
@@ -1276,29 +1315,27 @@
     const w = whoami;
     const r = w.round;
     const name = w.cfg.names[r.player];
+    const solo = w.cfg.names.length === 1;
     const last = w.index + 1 >= w.cfg.rounds;
     let body;
     if (r.phase === "done") {
       const found = r.points > 0;
       body = `<div class="wh-stage done ${found ? "found" : "missed"}">
-          <p class="wh-verdict">${found ? `${escapeHtml(name)} a trouvé !` : "Raté !"}</p>
-          <p class="wh-points">${found ? `+${r.points} point${r.points > 1 ? "s" : ""}` : "0 point"}</p>
+          <p class="wh-verdict">${found ? `${solo ? "Bien joué" : escapeHtml(name)} ! +${r.points} point${r.points > 1 ? "s" : ""}` : "Raté, 0 point"}</p>
+          <p class="subtle wh-try">${found ? `Trouvé avec ${r.attempts.length === 1 ? "le premier indice" : `${r.attempts.length} indices`}.` : "Voici la carte à deviner :"}</p>
           ${cardMiniHtml(r.card)}
-          ${whCluesHtml({ ...r, shown: r.clues.length })}
           <div class="m-actions"><button class="button" type="button" data-action="wh-next" data-autofocus>${last ? "Voir le résultat" : "Manche suivante"}</button></div>
         </div>`;
     } else {
+      const tried = r.attempts.length ? `<p class="wh-tried" role="status">Déjà essayé : ${r.attempts.map(item => `<span>${escapeHtml(item)}</span>`).join("")}</p>` : "";
       body = `<div class="wh-stage">
-          <div class="wh-mystery" role="img" aria-label="Carte cachée"><span>?</span></div>
-          <p class="wh-turn"><span>À</span> <strong>${escapeHtml(name)}</strong> <span>de trouver le joueur</span></p>
-          ${whLadderHtml(r)}
+          <div class="wh-who"><div class="wh-mystery" role="img" aria-label="Carte cachée"><span>?</span></div><p class="wh-turn">${solo ? "Qui est ce joueur ?" : `<strong>${escapeHtml(name)}</strong>, à toi de jouer`}</p></div>
           ${whCluesHtml(r)}
-          ${r.log ? `<p class="wh-log" role="status">${escapeHtml(r.log)}</p>` : ""}
+          ${tried}
           <form class="m-guess" id="wh-guess-form" autocomplete="off"><div class="wh-guess-wrap"><label class="visually-hidden" for="wh-guess">Nom du joueur</label><input id="wh-guess" name="guess" maxlength="60" placeholder="Tape un nom de joueur…" autocomplete="off" aria-autocomplete="list" aria-controls="wh-search-results" data-autofocus><ul class="wh-search-results" id="wh-search-results" role="listbox" aria-label="Propositions" hidden></ul></div><button class="button" type="submit">Proposer</button></form>
-          <p class="wh-hint">Essai ${r.attempts.length + 1} sur ${r.clues.length} · ${WH_POINTS[r.attempts.length]} point${WH_POINTS[r.attempts.length] > 1 ? "s" : ""} si c’est le bon</p>
         </div>`;
     }
-    shell(`<section class="setup-layout m-wide wh-mode"><div class="section-head"><div>${eyebrowHtml(`Qui suis-je ? · Manche ${w.index + 1} / ${w.cfg.rounds}`)}<h1 class="page-title">Manche ${w.index + 1} <span class="wh-of">/ ${w.cfg.rounds}</span></h1><p class="subtle m-kicker">Qui suis-je ?</p></div><button class="button danger" type="button" data-action="m-quit">Quitter</button></section>
+    shell(`<section class="setup-layout m-wide wh-mode">${modeBar("Qui suis-je ?", `Manche ${w.index + 1} <span class="wh-of">/ ${w.cfg.rounds}</span>`, `<button class="button danger" type="button" data-action="m-quit">Quitter</button>`)}
       ${noticeHtml()}${whScoreboardHtml()}${body}</section>`);
     afterModeRender();
   }
@@ -1340,7 +1377,6 @@
       r.phase = "done";
     } else {
       r.shown = attempt + 1;
-      r.log = `« ${guess} » n’est pas le bon joueur : indice suivant dévoilé.`;
     }
     if (r.phase === "done") w.history[w.index] = r.points;
     renderWhoamiPlay();
@@ -1355,11 +1391,21 @@
     let wanted = draft.rounds;
     if (count === 2 && wanted % 2 === 1) wanted++;
     const rounds = Math.min(wanted, eligible.length);
-    saveLocal(WHOAMI_KEY, { prefs: { count, names: draft.names, rounds: draft.rounds } });
+    saveLocal(WHOAMI_KEY, { prefs: { count, names: draft.names, rounds: draft.rounds }, rules: true });
     whoami = { cfg: { names, rounds, requested: draft.rounds }, deck: whDeck(rounds, eligible), index: 0, scores: names.map(() => 0), history: [], round: null };
     notice = rounds < wanted ? `La base ne compte que ${eligible.length} carte${eligible.length > 1 ? "s" : ""} : la partie est limitée à ${rounds} manche${rounds > 1 ? "s" : ""}.` : "";
     noticeType = "";
     whNextRound();
+  }
+
+  const WH_EMOJI = { 5: "🟩", 3: "🟨", 2: "🟧", 0: "🟥" };
+
+  function whShareText() {
+    const w = whoami;
+    const names = w.cfg.names;
+    const squares = w.history.map(points => WH_EMOJI[points] || "🟥").join("");
+    const score = names.length === 1 ? `${w.scores[0]} / ${whMaxPoints(0)} points` : `${names[0]} ${w.scores[0]} – ${w.scores[1]} ${names[1]}`;
+    return `Seven · Qui suis-je ?\n${squares}\n${score}`;
   }
 
   function renderWhoamiEnd() {
@@ -1367,19 +1413,29 @@
     const w = whoami;
     const names = w.cfg.names;
     const solo = names.length === 1;
-    let title;
-    if (solo) title = `${w.scores[0]} / ${whMaxPoints(0)} points`;
-    else if (w.scores[0] === w.scores[1]) title = "Égalité.";
+    let title, extra = "";
+    if (solo) {
+      title = `${w.scores[0]} / ${whMaxPoints(0)} points`;
+      const best = loadLocal(WHOAMI_KEY).best || {};
+      const key = String(w.cfg.rounds);
+      if (!w.recorded) {
+        w.recorded = true;
+        const record = best[key] === undefined || w.scores[0] > best[key];
+        w.recordMsg = record ? (best[key] === undefined ? "Premier score enregistré sur cet appareil." : `Nouveau record local ! (ancien : ${best[key]})`) : `Record local : ${best[key]} / ${whMaxPoints(0)} points.`;
+        if (record) saveLocal(WHOAMI_KEY, { best: { ...best, [key]: w.scores[0] } });
+      }
+      extra = `<p class="subtle m-recordline">${escapeHtml(w.recordMsg || "")}</p>`;
+    } else if (w.scores[0] === w.scores[1]) title = "Égalité.";
     else title = `${escapeHtml(names[w.scores[0] > w.scores[1] ? 0 : 1])} gagne.`;
     const rows = w.deck.slice(0, w.cfg.rounds).map((card, i) => {
       const player = names[i % names.length];
-      const points = w.history[i];
-      return `<li><span class="wh-recap-n">${i + 1}</span><span class="wh-recap-name">${escapeHtml(card.name)}</span>${solo ? "" : `<em>${escapeHtml(player)}</em>`}<strong class="${points > 0 ? "ok" : "ko"}">${points > 0 ? `+${points}` : "0"}</strong></li>`;
+      const points = w.history[i] || 0;
+      return `<li><span class="wh-recap-n">${i + 1}</span><span class="wh-recap-name">${escapeHtml(card.name)}${solo ? "" : `<em>${escapeHtml(player)}</em>`}</span><span class="wh-recap-sq" aria-hidden="true">${WH_EMOJI[points] || "🟥"}</span><strong class="${points > 0 ? "ok" : "ko"}">${points > 0 ? `+${points}` : "0"}</strong></li>`;
     }).join("");
-    shell(`<section class="setup-layout m-wide wh-mode"><div class="section-head"><div>${eyebrowHtml("Qui suis-je ? · Terminé")}<h1 class="page-title">${title}</h1><p class="subtle m-kicker">Qui suis-je ? · Terminé</p></div><button class="button secondary" type="button" data-action="home">Menu principal</button></section>
-      ${whScoreboardHtml()}
+    shell(`<section class="setup-layout m-wide wh-mode">${modeBar("Qui suis-je ? · Terminé", title, `<button class="button secondary" type="button" data-action="home">Menu principal</button>`)}
+      ${noticeHtml()}${extra}${solo ? "" : whScoreboardHtml()}
       <div class="setup-panel wh-recap"><h2>Les cartes</h2><ol class="wh-recap-list">${rows}</ol></div>
-      <div class="game-actions"><button class="button secondary" type="button" data-action="wh-setup">Modifier les réglages</button><button class="button" type="button" data-action="wh-replay" data-autofocus>Rejouer</button></div></section>`);
+      <div class="game-actions"><button class="button secondary" type="button" data-action="m-copy">Copier le résultat</button><button class="button secondary" type="button" data-action="wh-setup">Modifier les réglages</button><button class="button" type="button" data-action="wh-replay" data-autofocus>Rejouer</button></div></section>`);
     afterModeRender();
   }
 
@@ -1450,7 +1506,7 @@
           <label class="m-choice-item"><input type="radio" name="mode" value="duo" ${solo ? "" : "checked"}><span><strong>Duel · 2 joueurs</strong><small>Une contrainte chacun, enchères sur le même appareil.</small></span></label>
         </div>
         ${players1}
-        <div class="m-rules"><strong>Règles</strong><ul>
+        ${rulesFold(COMPOSE_KEY, `<ul>
           <li>Compose une équipe de 7 cartes : 1 gardien, 3 défenseurs, 1 milieu, 2 attaquants.</li>
           ${solo
             ? `<li>Une carte est proposée à la fois : tu la prends ou tu la défausses (nombre de défausses limité selon les contraintes). Un poste n’est plus proposé une fois complet. La partie s’arrête dès que l’équipe est complète.</li>
@@ -1459,7 +1515,7 @@
           <li>Les joueurs enchérissent comme dans le mode Enchère, mais le gagnant ne reçoit que la carte de sa couleur ; l’autre carte est écartée de la partie.</li>
           <li>Une carte reçue sans enchère (poste déjà complété par l’adversaire) a 75 % de chances de ne pas respecter ta contrainte, et 25 % de la respecter avec une mauvaise note.</li>
           <li>Le plus haut pourcentage de correspondance à sa contrainte l’emporte.</li>`}
-        </ul></div>
+        </ul>`)}
         <button class="button" type="submit" ${short.ready ? "" : "disabled"}>Lancer la partie</button>
       </form></section>`);
   }
@@ -1683,7 +1739,7 @@
     if (duo && !distinctNames(names)) { cpDraft = d; setNotice("Saisis deux pseudos différents.", "error"); return; }
     if (!cpShortages(duo ? 2 : 1).ready) { cpDraft = d; setNotice("La base est trop petite pour ce mode.", "error"); return; }
     cpDraft = d;
-    saveLocal(COMPOSE_KEY, { prefs: { mode: d.mode, names: d.names, count: d.count, mystery: d.mystery, budgets: d.budgets } });
+    saveLocal(COMPOSE_KEY, { prefs: { mode: d.mode, names: d.names, count: d.count, mystery: d.mystery, budgets: d.budgets }, rules: true });
     cpBegin({ mode: d.mode, names, count: d.count, mystery: d.mystery, budgets: [...d.budgets] });
   }
 
@@ -1908,12 +1964,12 @@
 
   /* ----- Affichage de la partie ----- */
 
-  function positionListHtml(team) {
-    return `<div class="position-list">${POSITIONS.map(position => {
+  function positionListHtml(team, compact = false) {
+    return `<div class="position-list${compact ? " compact" : ""}">${POSITIONS.map(position => {
       const entries = team.filter(player => player.position === position);
       const slots = Array.from({ length: COUNTS[position] }, (_, i) => entries[i]
         ? `<div class="roster-player"><span class="roster-dot"></span><span class="roster-name">${escapeHtml(entries[i].name)}</span>${rarityBadgeHtml(entries[i])}${hasRating(entries[i]) ? `<span class="rating-chip" title="Note sur 10">${formatRating(entries[i].rating)}/10</span>` : ""}</div>`
-        : `<div class="roster-empty">Emplacement libre</div>`).join("");
+        : `<div class="roster-empty">${compact ? "Libre" : "Emplacement libre"}</div>`).join("");
       return `<div class="position-group"><div class="position-label"><span>${positionIcon(position)}</span><span>${entries.length} / ${COUNTS[position]}</span></div><div class="position-items">${slots}</div></div>`;
     }).join("")}</div>`;
   }
@@ -1923,9 +1979,9 @@
     return `<ul class="cg-cons">${evals.map(item => `<li class="${item.state}"><span class="m-state" aria-hidden="true">${icon[item.state]}</span><span><strong>${escapeHtml(item.label)}</strong><small>${escapeHtml(item.detail)}</small></span></li>`).join("")}</ul>`;
   }
 
-  function cpFactsHtml(player) {
+  function cpFactsHtml(player, withPosition = true) {
     const rows = [
-      ["Poste", `${positionIcon(player.position)} ${escapeHtml(player.position)}`],
+      ...(withPosition ? [["Poste", `${positionIcon(player.position)} ${escapeHtml(player.position)}`]] : []),
       ["Nationalité", escapeHtml(String(player.nationality || "").trim() || "—")],
       ["Club", escapeHtml(String(player.club || "").trim() || "—")],
       ["Type", escapeHtml(rarityLabel(player.rarity))],
@@ -1945,10 +2001,10 @@
       const ev = cpEval(team, c.constraints[index])[0];
       own = `<div class="cg-own ${ev.state}"><span>Contrainte</span><strong>${escapeHtml(ev.label)}</strong><small>${escapeHtml(ev.detail)}</small></div>`;
     }
-    return `<section class="${classes}" ${active ? 'aria-current="step"' : ""}><div class="team-heading"><div><h2>${escapeHtml(c.names[index])}</h2><div class="team-status">${team.length} / 7</div>${active ? `<span class="turn-badge">À toi</span>` : ""}</div>${duo ? `<div class="budget">${moneyHtml(c.budgets[index])}</div>` : ""}</div>
+    return `<section class="${classes}" ${active ? 'aria-current="step"' : ""}><div class="team-heading"><div><h2>${duo ? escapeHtml(c.names[index]) : "Mon équipe"}</h2><div class="team-status">${team.length} / 7${active ? ` · <span class="turn-badge">À toi</span>` : ""}</div></div>${duo ? `<div class="budget">${moneyHtml(c.budgets[index])}</div>` : ""}</div>
       ${own}${duo ? `<div class="spending-line"><span>Dépensé</span><strong>${money(c.spent[index])}</strong></div>` : ""}
       <div class="progress-track"><div class="progress-fill" style="width:${Math.round(team.length / 7 * 100)}%"></div></div>
-      ${positionListHtml(team)}</section>`;
+      ${positionListHtml(team, true)}</section>`;
   }
 
   function renderComposePlay() {
@@ -1956,6 +2012,35 @@
     screen = "cp-play";
     if (compose.mode === "duo") renderComposeDuo(); else renderComposeSolo();
     afterModeRender();
+  }
+
+  function cpShort(c) {
+    if (c.kind === "nat-min") return `${c.value} nationalités`;
+    if (c.kind === "club-max") return `${c.value} clubs max`;
+    if (c.kind === "avg-min") return `moyenne ≥ ${formatRating(c.value)}`;
+    if (c.kind === "legend-min") return "Légende";
+    if (c.kind === "mythic-min") return "Mythique";
+    return String(c.value);
+  }
+
+  /* Aperçu : ce que changerait la carte proposée pour chaque contrainte (sans rien modifier). */
+  function cpImpactHtml(card) {
+    const c = compose;
+    const team = c.teams[0];
+    const before = cpEval(team, c.constraints[0]);
+    const after = cpEval([...team, card], c.constraints[0]);
+    const items = after.map((a, i) => {
+      const b = before[i];
+      let kind = "same";
+      if (a.kind === "nat-only" || a.kind === "club-only") kind = cpCardMatches(a, card) ? "good" : "bad";
+      else if (a.state === "ko" && b.state !== "ko") kind = "bad";
+      else if (a.degree > b.degree + 1e-9) kind = "good";
+      else if (a.degree < b.degree - 1e-9) kind = "bad";
+      const mark = { good: "▲", bad: "▼", same: "●" }[kind];
+      const word = { good: "aide", bad: "pénalise", same: "neutre" }[kind];
+      return `<li class="${kind}" title="${escapeHtml(a.label)} : ${word}"><span aria-hidden="true">${mark}</span><span class="visually-hidden">${word} : </span>${escapeHtml(cpShort(a))}</li>`;
+    }).join("");
+    return `<div class="cg-impact-wrap"><span class="cg-impact-title">Effet de cette carte</span><ul class="cg-impact">${items}</ul></div>`;
   }
 
   function renderComposeSolo() {
@@ -1966,15 +2051,15 @@
     const head = c.mystery
       ? `<div class="mystery-mark" aria-hidden="true">?</div><h2 class="candidate-name">Joueur mystère</h2>`
       : `<div class="candidate-photo"${clubStyle(card)}>${photoMarkup(card.photo, card.name)}</div><h2 class="candidate-name">${escapeHtml(card.name)}</h2>`;
-    const note = c.discards <= 0 ? "Plus aucune défausse : tu dois prendre cette carte." : !canDiscard ? "Défausse impossible : il ne resterait pas assez de joueurs pour compléter l’équipe." : "Prends la carte pour l’ajouter à ton équipe ou défausse-la.";
-    const left = `<section class="team-panel cg-rules"><div class="team-heading"><div><h2>${escapeHtml(c.names[0])}</h2><div class="team-status">${pluralFr(c.count, "contrainte", "contraintes")} · ${CP_LEVELS[c.count - 1]}</div></div><div class="budget"><span class="amount">${c.discards}</span><span class="unit">défausse${c.discards > 1 ? "s" : ""} restante${c.discards > 1 ? "s" : ""}</span></div></div>
+    const note = c.discards <= 0 ? "Plus aucune défausse : tu dois prendre cette carte." : !canDiscard ? "Défausse impossible : il ne resterait pas assez de joueurs pour compléter l’équipe." : "";
+    const left = `<section class="team-panel cg-rules"><div class="team-heading"><div><h2>Contraintes</h2><div class="team-status">${pluralFr(c.count, "contrainte", "contraintes")} · ${CP_LEVELS[c.count - 1]}</div></div></div>
       ${cpConsHtml(evals)}
       <div class="cg-reroll"><button class="button secondary" type="button" data-action="cp-reroll">Changer les caractéristiques</button></div></section>`;
-    shell(`<section class="game-top"><div><div class="eyebrow">Défi de composition</div><h1 class="page-title">${escapeHtml(c.names[0])} compose</h1><p class="subtle">${c.teams[0].length} / 7 recrutés${c.discarded ? ` · ${pluralFr(c.discarded, "défaussé", "défaussés")}` : ""}</p></div><button class="button danger" type="button" data-action="m-quit">Quitter</button></section>
+    shell(`${modeBar("Défi de composition", `${escapeHtml(c.names[0])} compose`, `<button class="button danger" type="button" data-action="m-quit">Quitter</button>`)}
       ${noticeHtml()}
       <div class="game-layout cg-layout">${left}
-        <section class="center-stage"><div class="center-label">Carte proposée</div>${head}${cpFactsHtml(card)}
-          <div class="bid-box"><div class="bid-line"><span>Défausses restantes</span><span>${c.discards}</span></div><div class="turn-note" aria-live="polite">${escapeHtml(note)}</div>
+        <section class="center-stage"><div class="center-label">Carte proposée</div>${head}${cpFactsHtml(card)}${cpImpactHtml(card)}
+          <div class="bid-box"><div class="bid-line"><span>Défausses restantes</span><span>${c.discards}</span></div>${note ? `<div class="turn-note" aria-live="polite">${escapeHtml(note)}</div>` : ""}
             <div class="cg-choice"><button class="button warning" type="button" data-action="cp-take" data-autofocus>Prendre</button><button class="button secondary" type="button" data-action="cp-discard" ${canDiscard ? "" : "disabled"}>Défausser</button></div></div>
         </section>${cpTeamPanel(0)}</div>`);
   }
@@ -1983,7 +2068,7 @@
     const c = compose;
     const card = c.cards[index];
     const ok = cpCardMatches(c.constraints[index][0], card);
-    return `<div class="cg-card${index === 1 ? " right" : ""}"><span class="cg-card-owner">${escapeHtml(c.names[index])}</span><div class="candidate-photo"${clubStyle(card)}>${photoMarkup(card.photo, card.name)}</div><h2 class="candidate-name">${escapeHtml(card.name)}</h2>${cpFactsHtml(card)}<span class="${ok ? "cg-ok-tag" : "cg-ko-tag"}">${ok ? "✓ Respecte la contrainte" : "✗ Aucune carte conforme"}</span></div>`;
+    return `<div class="cg-card${index === 1 ? " right" : ""}${ok ? " fits" : ""}"><div class="cg-card-top"><span class="cg-card-owner">${escapeHtml(c.names[index])}</span><span class="${ok ? "cg-ok-tag" : "cg-ko-tag"}" title="${ok ? "Respecte la contrainte" : "Ne respecte pas la contrainte"}"><span aria-hidden="true">${ok ? "✓" : "✗"}</span><span class="visually-hidden">${ok ? "Respecte la contrainte" : "Ne respecte pas la contrainte"}</span></span></div><div class="candidate-photo"${clubStyle(card)}>${photoMarkup(card.photo, card.name)}</div><h2 class="candidate-name">${escapeHtml(card.name)}</h2>${cpFactsHtml(card, false)}</div>`;
   }
 
   function renderComposeDuo() {
@@ -2000,22 +2085,21 @@
       controls = `<div class="bid-controls forced"><button class="button warning" type="button" data-action="cp-free" data-autofocus>Prendre ma carte (0 crédit)</button></div>`;
     } else if (canRaise) {
       turnText = c.highBid === 0
-        ? `Au tour de ${bn}. Enchéris pour obtenir ta carte : l’autre carte sera écartée.`
-        : `Au tour de ${bn}. En se retirant, ${bn} laisse sa carte à ${ln} pour ${money(c.highBid)}.`;
+        ? `${bn} enchérit pour obtenir sa carte : l’autre sera écartée.`
+        : `Si ${bn} se retire, ${ln} garde sa carte pour ${money(c.highBid)}.`;
       controls = `<div class="bid-controls"><input id="cp-bid" aria-label="Montant de la surenchère" type="number" min="${c.highBid + 1}" max="${c.budgets[bidder]}" step="1" value="${Math.min(c.highBid + 1, c.budgets[bidder])}"><button class="button warning" type="button" data-action="cp-raise">Enchérir</button>${c.highBid === 0 ? "" : `<button class="button secondary" type="button" data-action="cp-pass">Laisser à ${escapeHtml(ln)}</button>`}</div>`;
     } else {
       turnText = `${bn} ne peut pas dépasser ${money(c.highBid)}. ${ln} remporte sa carte pour ${money(c.highBid)}.`;
       controls = `<div class="bid-controls forced"><button class="button warning" type="button" data-action="cp-pass" data-autofocus>Laisser à ${escapeHtml(ln)}</button></div>`;
     }
     const placed = c.teams[0].length + c.teams[1].length;
-    shell(`<section class="game-top"><div><div class="eyebrow">Défi de composition · Enchère ${c.bidCount}</div><h1 class="page-title">${escapeHtml(bn)} joue</h1><p class="subtle">${placed} / 14 attribués</p></div><button class="button danger" type="button" data-action="m-quit">Quitter</button></section>
+    shell(`${modeBar(`Défi de composition · Enchère ${c.bidCount} · ${placed} / 14 cartes`, `${escapeHtml(bn)} joue`, `<button class="button secondary" type="button" data-action="cp-restart">Recommencer</button><button class="button danger" type="button" data-action="m-quit">Quitter</button>`)}
       ${noticeHtml()}
       <div class="game-layout cg-layout">${cpTeamPanel(0)}
         <section class="center-stage"><div class="center-label">Aux enchères · ${escapeHtml(c.cards[0].position)}</div>
           <div class="cg-duo-cards">${cpDuoCardHtml(0)}${cpDuoCardHtml(1)}</div>
           <div class="bid-box"><div class="bid-line"><span>Offre de ${escapeHtml(ln)}</span><span>+1 minimum</span></div><div class="bid-value">${moneyHtml(c.highBid)}</div><div class="turn-note" aria-live="polite">${escapeHtml(turnText)}</div>${controls}</div>
-        </section>${cpTeamPanel(1)}</div>
-      <div class="game-actions"><button class="button secondary" type="button" data-action="cp-restart">Recommencer</button></div>`);
+        </section>${cpTeamPanel(1)}</div>`);
   }
 
   /* ----- Fin de partie ----- */
@@ -2061,9 +2145,9 @@
       title = !cpDuoDone() ? "Partie interrompue." : a === b ? "Égalité." : `${escapeHtml(c.names[a > b ? 0 : 1])} gagne.`;
     }
     const formation = duo ? tacticalFormation({ teams: c.teams, names: c.names }) : cpPitchHtml(c.teams[0], c.names[0]);
-    shell(`<section class="section-head"><div><div class="eyebrow">Défi de composition · Partie terminée</div><h1 class="page-title">${title}</h1>${isProto() ? "" : `<p class="subtle m-kicker">Défi de composition · Partie terminée</p>`}${c.note ? `<p class="subtle">${escapeHtml(c.note)}</p>` : ""}</div><button class="button secondary" type="button" data-action="home">Menu principal</button></section>
-      ${noticeHtml()}<div class="results-layout${duo ? "" : " cg-solo-results"}">${panels.map(panel => panel.html).join("")}${duo ? "" : `<section class="result-panel"><h2>Contraintes</h2>${cpConsHtml(panels[0].evals)}</section>`}</div>${formation}
-      <div class="game-actions"><button class="button secondary" type="button" data-action="cp-setup">Modifier les réglages</button><button class="button" type="button" data-action="cp-replay" data-autofocus>Rejouer</button></div>`);
+    shell(`${modeBar("Défi de composition · Partie terminée", title, `<button class="button secondary" type="button" data-action="home">Menu principal</button>`)}
+      ${c.note ? `<p class="subtle">${escapeHtml(c.note)}</p>` : ""}${noticeHtml()}<div class="results-layout${duo ? "" : " cg-solo-results"}">${panels.map(panel => panel.html).join("")}${duo ? "" : `<section class="result-panel"><h2>Contraintes</h2>${cpConsHtml(panels[0].evals)}</section>`}</div>${formation}
+      <div class="game-actions"><button class="button secondary" type="button" data-action="m-copy">Copier le résultat</button><button class="button secondary" type="button" data-action="cp-setup">Modifier les réglages</button><button class="button" type="button" data-action="cp-replay" data-autofocus>Rejouer</button></div>`);
     afterModeRender();
   }
 
@@ -2129,7 +2213,6 @@
       ${noticeHtml()}
       ${ready ? "" : `<div class="notice error" role="status">Il faut au moins 6 joueurs différents dans la base pour jouer à Secret (${pool} actuellement). Complète la base dans Paramètres.</div>`}
       <form class="setup-panel sc-setup" id="sc-setup-form" novalidate>
-        <div class="sc-pitch" aria-hidden="true"><span class="sc-redact">██████</span><span class="sc-redact short">███</span><span class="sc-redact">████████</span></div>
         <h2>Joueurs</h2>
         <div class="m-choice m-choice-row" role="radiogroup" aria-label="Nombre de joueurs">
           <label class="m-choice-item"><input type="radio" name="count" value="1" ${solo ? "checked" : ""}><span><strong>Solo</strong><small>Tu démasques les cartes secrètes choisies par le jeu.</small></span></label>
@@ -2142,15 +2225,14 @@
           <div class="field"><label for="sc-rounds">${solo ? "Secrets à trouver" : "Manches par joueur"}</label><input id="sc-rounds" name="rounds" type="number" min="1" max="5" step="1" value="${d.rounds}">${bestText}</div>
         </div>
         <label class="mystery-toggle sc-auto" for="sc-auto"><input id="sc-auto" name="auto" type="checkbox" ${d.auto ? "checked" : ""}><span>Élimination automatique<small>Les cartes écartées par une réponse sont grisées pour toi. Décoche pour barrer toi-même.</small></span></label>
-        <div class="m-rules sc-rules"><strong>Comment jouer</strong>
-          <ol>
+        ${rulesFold(SECRET_KEY, `<ol>
             <li><b>Un secret est caché</b> parmi les cartes du plateau${solo ? "" : " : à chaque manche, un joueur choisit en cachette, l’autre enquête"}.</li>
             <li><b>Pose des questions</b> : poste, club, pays, note, rareté ou initiale du nom. Le jeu répond seulement « oui » ou « non ».</li>
             <li><b>Accuse une carte</b> quand tu es sûr. Trouvé : la manche est finie. Raté : la carte est écartée et tu prends +${SC_PENALTY} coups.</li>
             <li><b>Moins de coups = victoire.</b> Chaque question compte 1 coup.</li>
           </ol>
           <p class="sc-example"><b>Exemple :</b> tu demandes « Est-ce un attaquant ? » → <em>Non</em> : tous les attaquants sont écartés. Puis « Joue-t-il au club PSG ? » → <em>Oui</em> : il ne reste que les joueurs du PSG qui ne sont pas attaquants.</p>
-        </div>
+          <p class="sc-example"><b>Conseil :</b> en cas de blocage, le bouton « Conseil » désigne la meilleure question à poser, pour +1 coup.</p>`, "sc-rules")}
         <button class="button" type="submit" ${ready ? "" : "disabled"}>Lancer l’enquête</button>
       </form></section>`);
   }
@@ -2192,7 +2274,8 @@
 
   function scCoups() {
     const s = secretGame;
-    return { questions: s.log.length, wrong: s.wrong.size, total: s.log.length + SC_PENALTY * s.wrong.size };
+    const hints = s.hints || 0;
+    return { questions: s.log.length, wrong: s.wrong.size, hints, total: s.log.length + hints + SC_PENALTY * s.wrong.size };
   }
 
   function scPar() {
@@ -2216,7 +2299,7 @@
     const duo = d.count === 2;
     const names = duo ? d.names.map((name, i) => name || `Joueur ${i + 1}`) : [d.names[0] || "Toi"];
     if (duo && !distinctNames(names)) { setNotice("Saisis deux pseudos différents.", "error"); return; }
-    saveLocal(SECRET_KEY, { prefs: { count: d.count, names: d.names, size: d.size, rounds: d.rounds, auto: d.auto } });
+    saveLocal(SECRET_KEY, { prefs: { count: d.count, names: d.names, size: d.size, rounds: d.rounds, auto: d.auto }, rules: true });
     scBegin({ names, size: Math.min(d.size, pool.length), requested: d.size, rounds: d.rounds, auto: d.auto });
   }
 
@@ -2236,7 +2319,7 @@
     if (!s.boards[round.board]) s.boards[round.board] = shuffled(scPool()).slice(0, s.cfg.size);
     s.board = s.boards[round.board];
     s.questions = scQuestions(s.board);
-    Object.assign(s, { log: [], wrong: new Set(), crossed: new Set(), pending: null, pick: null, feedback: null, secret: null, focus: "", tab: s.questions[0] ? s.questions[0].cat : "pos" });
+    Object.assign(s, { log: [], wrong: new Set(), crossed: new Set(), pending: null, pick: null, feedback: null, secret: null, focus: "", hints: 0, hintKey: null, lastWrong: null, tab: s.questions[0] ? s.questions[0].cat : "pos" });
     if (round.hider < 0) { s.secret = s.board[randomInt(s.board.length)]; s.phase = "guess"; }
     else s.phase = "pre-hide";
     renderSecretPlay();
@@ -2277,7 +2360,7 @@
       body = scRevealHtml(round, hiderName, guesserName);
     }
     const title = s.phase === "pre-hide" || s.phase === "hide" ? `${escapeHtml(hiderName)} cache` : s.phase === "reveal" ? "Le secret est levé" : `${escapeHtml(guesserName)} enquête`;
-    shell(`<section class="setup-layout m-wide sc-mode">${modeHead(`Secret · ${roundLabel}`, title, "m-quit", "Quitter")}
+    shell(`<section class="setup-layout m-wide sc-mode">${modeBar(`Secret · ${roundLabel}`, title, `<button class="button secondary" type="button" data-action="m-quit">Quitter</button>`)}
       ${noticeHtml()}${body}</section>`);
     afterSecretRender();
   }
@@ -2295,7 +2378,7 @@
     const chips = s.questions.filter(q => q.cat === s.tab).map(q => {
       const done = asked.has(q.key);
       const useless = !done && !informative(q);
-      return `<button type="button" class="sc-chip${done ? " asked" : ""}" data-action="sc-ask" data-key="${escapeHtml(q.key)}" ${done || useless ? "disabled" : ""} title="${escapeHtml(done ? "Déjà demandé" : useless ? "Sans intérêt : la réponse est déjà connue" : q.label)}" aria-label="${escapeHtml(q.label)}">${escapeHtml(q.short)}</button>`;
+      return `<button type="button" class="sc-chip${done ? " asked" : ""}${q.key === s.hintKey ? " hint" : ""}" data-action="sc-ask" data-key="${escapeHtml(q.key)}" ${done || useless ? "disabled" : ""} title="${escapeHtml(done ? "Déjà demandé" : useless ? "Sans intérêt : la réponse est déjà connue" : q.label)}" aria-label="${escapeHtml(q.label)}">${q.key === s.hintKey ? "★ " : ""}${escapeHtml(q.short)}</button>`;
     }).join("");
     const usefulLeft = s.questions.some(q => !asked.has(q.key) && remaining.some(q.test) && !remaining.every(q.test));
     const lastWrong = s.lastWrong;
@@ -2311,17 +2394,23 @@
       : !usefulLeft && remaining.length > 1 && auto
         ? `Plus aucune question utile : ${remaining.length} cartes restent possibles, tente ta chance.`
         : "Choisis une catégorie, puis une valeur : le jeu répond par oui ou non.";
-    const fb = s.feedback ? `<p class="sc-feedback ${s.feedback.kind}" role="status"><strong>${escapeHtml(s.feedback.head)}</strong> ${escapeHtml(s.feedback.text)}</p>` : `<p class="sc-feedback idle" role="status">${escapeHtml(hint)}</p>`;
-    return `<div class="sc-hud" aria-label="Tableau de bord"><div class="sc-stat"><span>Coups</span><strong>${coups.total}</strong><small>${pluralFr(coups.questions, "question", "questions")}${coups.wrong ? ` · ${pluralFr(coups.wrong, "erreur", "erreurs")} (+${SC_PENALTY} chacune)` : ""}</small></div><div class="sc-stat"><span>${auto ? "Candidats" : "Cartes non barrées"}</span><strong>${left} <small>/ ${s.board.length}</small></strong><small>Objectif : démasquer le secret${hiderName ? ` de ${escapeHtml(hiderName)}` : ""}</small></div><div class="sc-stat"><span>Repère</span><strong>${scPar()}</strong><small>coups pour un sans-faute</small></div></div>
+    const showFb = s.feedback && (s.feedback.kind === "miss" || s.feedback.kind === "idle");
+    const fb = !s.feedback ? `<p class="sc-feedback idle" role="status">${escapeHtml(hint)}</p>` : !showFb ? `<span class="visually-hidden" role="status">${escapeHtml(s.feedback.head)} ${escapeHtml(s.feedback.text)}</span>` : `<p class="sc-feedback ${s.feedback.kind}" role="status"><strong>${escapeHtml(s.feedback.head)}</strong> ${escapeHtml(s.feedback.text)}</p>`;
+    const logItem = entry => `<li class="${entry.answer ? "yes" : "no"}${entry === s.log[s.log.length - 1] ? " new" : ""}"><span class="sc-badge">${entry.answer ? "OUI" : "NON"}</span><span>${escapeHtml(entry.label)}</span></li>`;
+    const recent = [...s.log].reverse();
+    const journal = s.log.length
+      ? `<ol class="sc-log">${recent.slice(0, 3).map(logItem).join("")}</ol>${recent.length > 3 ? `<details class="sc-more"><summary>Voir les ${recent.length - 3} précédentes</summary><ol class="sc-log">${recent.slice(3).map(logItem).join("")}</ol></details>` : ""}`
+      : "";
+    const canHint = usefulLeft && remaining.length > 1;
+    return `<div class="sc-hud" aria-label="Tableau de bord"><div class="sc-stat"><span>Coups</span><strong>${coups.total}</strong></div><div class="sc-stat"><span>${auto ? "Candidats" : "Non barrées"}</span><strong>${left}<small> / ${s.board.length}</small></strong></div><div class="sc-stat"><span>Repère</span><strong>${scPar()}</strong></div><p class="sc-hud-note">${pluralFr(coups.questions, "question", "questions")}${coups.hints ? ` · ${pluralFr(coups.hints, "conseil", "conseils")}` : ""}${coups.wrong ? ` · ${pluralFr(coups.wrong, "erreur", "erreurs")} (+${SC_PENALTY})` : ""}${hiderName ? ` · secret de ${escapeHtml(hiderName)}` : ""}</p></div>
       <div class="sc-play">
-        <section class="setup-panel sc-board-panel"><h2>Plateau</h2><div class="sc-board" role="group" aria-label="Plateau des cartes : touche une carte pour l’accuser">${s.board.map(tile).join("")}</div>
+        <section class="setup-panel sc-board-panel"><div class="sc-board" role="group" aria-label="Plateau des cartes : touche une carte pour l’accuser">${s.board.map(tile).join("")}</div>
           ${pendingCard ? `<div class="sc-lockbar accuse" role="alertdialog" aria-label="Confirmer l’accusation"><span>Accuser <strong>${escapeHtml(pendingCard.name)}</strong> ? Une erreur coûte +${SC_PENALTY} coups.</span><span class="sc-lockbtns"><button class="button" type="button" data-action="sc-confirm" data-autofocus>Oui, c’est lui</button><button class="button secondary" type="button" data-action="sc-cancel">Annuler</button></span></div>` : ""}</section>
-        <aside class="setup-panel sc-ask"><h2>Poser une question</h2>
+        <aside class="setup-panel sc-ask"><div class="sc-ask-head"><h2>Question</h2><button class="button secondary sc-hintbtn" type="button" data-action="sc-hint" ${canHint ? "" : "disabled"} title="Désigne la meilleure question à poser (+1 coup)">Conseil +1</button></div>
           <div class="sc-tabs" role="tablist" aria-label="Catégories de questions">${cats.map(([cat, label]) => `<button type="button" role="tab" class="sc-tab${cat === s.tab ? " on" : ""}" aria-selected="${cat === s.tab}" data-action="sc-tab" data-cat="${cat}">${label}</button>`).join("")}</div>
           <div class="sc-chips" role="tabpanel">${chips}</div>
           ${fb}
-          <h3 class="m-sub">Journal de l’enquête</h3>
-          ${s.log.length ? `<ol class="sc-log">${[...s.log].reverse().map(entry => `<li class="${entry.answer ? "yes" : "no"}"><span class="sc-badge">${entry.answer ? "OUI" : "NON"}</span><span>${escapeHtml(entry.label)}</span></li>`).join("")}</ol>` : `<p class="subtle">Aucune question pour l’instant.</p>`}
+          ${journal}
         </aside>
       </div>`;
   }
@@ -2334,7 +2423,7 @@
     const isLast = s.index + 1 >= s.plan.length;
     return `<div class="setup-panel sc-reveal">
       <div class="sc-flip"><div class="sc-secret-card${card.rarity === "legend" || card.rarity === "mythic" ? ` ${card.rarity}` : ""}"><span class="sc-photo big"${clubStyle(card)}>${photoMarkup(card.photo, card.name)}</span><h2>${escapeHtml(card.name)}</h2>${rarityBadgeHtml(card)}${cpFactsHtml(card)}</div></div>
-      <div class="sc-result"><p class="sc-verdict">${escapeHtml(scVerdict(last.total))}</p><p class="sc-total"><strong>${last.total}</strong> coup${last.total > 1 ? "s" : ""}</p><p class="subtle">${escapeHtml(guesserName)} a trouvé ${duo ? `le secret de ${escapeHtml(hiderName)}` : "le secret"} : ${pluralFr(last.questions, "question", "questions")}${last.wrong ? ` + ${pluralFr(last.wrong, "erreur", "erreurs")} × ${SC_PENALTY}` : ""}.</p>
+      <div class="sc-result"><p class="sc-verdict">${escapeHtml(scVerdict(last.total))}</p><p class="sc-total"><strong>${last.total}</strong> coup${last.total > 1 ? "s" : ""}</p><p class="subtle">${escapeHtml(guesserName)} a trouvé ${duo ? `le secret de ${escapeHtml(hiderName)}` : "le secret"} : ${pluralFr(last.questions, "question", "questions")}${last.hints ? ` + ${pluralFr(last.hints, "conseil", "conseils")}` : ""}${last.wrong ? ` + ${pluralFr(last.wrong, "erreur", "erreurs")} × ${SC_PENALTY}` : ""}.</p>
         <div class="m-actions"><button class="button" type="button" data-action="sc-next" data-autofocus>${isLast ? "Voir le résultat" : "Manche suivante"}</button></div></div></div>`;
   }
 
@@ -2353,8 +2442,32 @@
     s.log.push({ key, label: q.label, answer });
     s.pending = null;
     s.lastWrong = null;
+    s.hintKey = null;
     s.feedback = { kind: answer ? "yes" : "no", head: answer ? "Oui ✓" : "Non ✗", text: q.label };
     s.focus = `[data-action="sc-tab"][data-cat="${s.tab}"]`;
+    renderSecretPlay();
+  }
+
+  /* Conseil : la question la plus équilibrée (coupe les candidats au plus près de moitié-moitié). */
+  function scHint() {
+    const s = secretGame;
+    if (!s || s.phase !== "guess") return;
+    const remaining = scRemaining();
+    const asked = new Set(s.log.map(entry => entry.key));
+    let best = null;
+    for (const q of s.questions) {
+      if (asked.has(q.key)) continue;
+      const yes = remaining.filter(q.test).length;
+      if (!yes || yes === remaining.length) continue;
+      const gap = Math.abs(yes - remaining.length / 2);
+      if (!best || gap < best.gap) best = { q, gap };
+    }
+    if (!best) return;
+    s.hints = (s.hints || 0) + 1;
+    s.hintKey = best.q.key;
+    s.tab = best.q.cat;
+    s.feedback = { kind: "idle", head: "Conseil (+1 coup).", text: `Essaie : ${best.q.label}` };
+    s.focus = `.sc-chip.hint`;
     renderSecretPlay();
   }
 
@@ -2419,10 +2532,10 @@
       summary = `<div class="m-scores sc-scores">${names.map((name, i) => `<div class="m-score${totals[i] === Math.min(...totals) && totals[0] !== totals[1] ? " active" : ""}"><span>${escapeHtml(name)}</span><strong>${totals[i]}</strong><small>coups pour trouver ${s.plan.filter(r => r.guesser === i).length} secret${s.plan.filter(r => r.guesser === i).length > 1 ? "s" : ""}</small></div>`).join("")}</div>`;
     }
     const rows = s.results.map((result, i) => `<li><span class="wh-recap-n">${i + 1}</span><span class="wh-recap-name">${escapeHtml(result.card.name)}</span>${duo ? `<em>${escapeHtml(names[result.guesser])} enquête</em>` : ""}<strong>${result.total} coup${result.total > 1 ? "s" : ""}</strong></li>`).join("");
-    shell(`<section class="setup-layout m-wide sc-mode">${modeHead("Secret · Terminé", title, "home", "Menu principal")}
-      ${summary}
+    shell(`<section class="setup-layout m-wide sc-mode">${modeBar("Secret · Terminé", title, `<button class="button secondary" type="button" data-action="home">Menu principal</button>`)}
+      ${noticeHtml()}${summary}
       <div class="setup-panel wh-recap"><h2>Les secrets</h2><ol class="wh-recap-list sc-recap">${rows}</ol></div>
-      <div class="game-actions"><button class="button secondary" type="button" data-action="sc-setup">Modifier les réglages</button><button class="button" type="button" data-action="sc-replay" data-autofocus>Rejouer</button></div></section>`);
+      <div class="game-actions"><button class="button secondary" type="button" data-action="m-copy">Copier le résultat</button><button class="button secondary" type="button" data-action="sc-setup">Modifier les réglages</button><button class="button" type="button" data-action="sc-replay" data-autofocus>Rejouer</button></div></section>`);
     afterModeRender();
   }
 
@@ -2436,6 +2549,7 @@
     else if (action === "sc-lock") { const card = s.board.find(item => item.id === s.pick); if (s.phase === "hide" && card) { s.secret = card; s.pick = null; s.phase = "pre-guess"; renderSecretPlay(); } }
     else if (action === "sc-tab") { s.tab = button.dataset.cat; s.focus = `[data-action="sc-tab"][data-cat="${s.tab}"]`; renderSecretPlay(); }
     else if (action === "sc-ask") scAsk(button.dataset.key);
+    else if (action === "sc-hint") scHint();
     else if (action === "sc-toggle") { const id = button.dataset.id; if (s.crossed.has(id)) s.crossed.delete(id); else s.crossed.add(id); s.focus = `[data-action="sc-toggle"][data-id="${CSS.escape(id)}"]`; renderSecretPlay(); }
     else if (action === "sc-accuse") scAccuse(button.dataset.id);
     else if (action === "sc-cancel") { s.pending = null; renderSecretPlay(); }
@@ -2444,6 +2558,36 @@
   }
 
   /* ---------------------------------------------------------------- Dispatch commun */
+
+  function cpShareText() {
+    const c = compose;
+    const lines = ["Seven · Défi de composition"];
+    for (const index of c.mode === "duo" ? [0, 1] : [0]) {
+      const evals = cpEval(c.teams[index], c.constraints[index], true);
+      const stats = cpStats(c.teams[index]);
+      lines.push(`${c.names[index]} : ${cpPercent(evals)} % des contraintes${stats.avg !== null ? ` · moyenne ${formatRating(stats.avg)} / 10` : ""}`);
+      lines.push(evals.map(item => `${item.state === "ok" ? "✅" : "❌"} ${cpShort(item)}`).join("  "));
+    }
+    return lines.join("\n");
+  }
+
+  function scShareText() {
+    const s = secretGame;
+    const names = s.cfg.names;
+    const lines = ["Seven · Secret"];
+    s.results.forEach((result, i) => {
+      const dots = "🔎".repeat(Math.min(result.questions, 12)) + "❌".repeat(Math.min(result.wrong, 6));
+      lines.push(`${names.length === 2 ? `${names[result.guesser]} · ` : ""}Secret ${i + 1} : ${result.total} coup${result.total > 1 ? "s" : ""} ${dots}`);
+    });
+    return lines.join("\n");
+  }
+
+  function modeShareText() {
+    if (screen === "wh-end" && whoami) return whShareText();
+    if (screen === "cp-end" && compose) return cpShareText();
+    if (screen === "sc-end" && secretGame) return scShareText();
+    return "Seven";
+  }
 
   function renderModeScreen() {
     if (screen === "wh-setup") renderWhoamiSetup();
@@ -2465,7 +2609,8 @@
       if (!window.confirm("Quitter cette partie ? La progression sera perdue.")) return true;
       stopModeTimer(); whoami = compose = secretGame = null; whDraft = cpDraft = scDraft = null;
       screen = "menu"; notice = ""; render();
-    } else if (action === "wh-setup") { whDraft = null; notice = ""; renderWhoamiSetup(); }
+    } else if (action === "m-copy") copyText(modeShareText());
+    else if (action === "wh-setup") { whDraft = null; notice = ""; renderWhoamiSetup(); }
     else if (action === "wh-pick") {
       const input = root.querySelector("#wh-guess");
       if (input) { input.value = button.dataset.name || ""; input.focus(); }
@@ -2507,6 +2652,22 @@
     if (target.name === "mode" && screen === "cp-setup") { cpDraft = readCpForm(target.form); renderComposeSetup(); return true; }
     return false;
   }
+
+  root.addEventListener("keydown", event => {
+    const t = event.target;
+    if (screen !== "wh-play") return;
+    const list = root.querySelector("#wh-search-results");
+    if (!list || list.hidden) return;
+    const items = [...list.querySelectorAll("button")];
+    if (!items.length) return;
+    if (t.id === "wh-guess" && event.key === "ArrowDown") { event.preventDefault(); items[0].focus(); }
+    else if (t.closest && t.closest("#wh-search-results")) {
+      const i = items.indexOf(t);
+      if (event.key === "ArrowDown") { event.preventDefault(); (items[i + 1] || items[0]).focus(); }
+      else if (event.key === "ArrowUp") { event.preventDefault(i > 0 ? items[i - 1].focus() : root.querySelector("#wh-guess").focus()); }
+      else if (event.key === "Escape") { list.hidden = true; root.querySelector("#wh-guess").focus(); }
+    }
+  });
 
   root.addEventListener("input", event => {
     if (event.target.id === "wh-guess" && screen === "wh-play") whSearchRefresh(event.target.value);
